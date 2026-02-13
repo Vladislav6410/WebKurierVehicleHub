@@ -1,13 +1,20 @@
 {
-  "name": "webkurier-hybrid",
-  "version": "1.0.2",
+  "name": "webkurier-dronehybrid",
+  "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "lint": "eslint . || echo 'No eslint config, skipping lint'",
-    "test": "jest --ci --passWithNoTests"
+    "dev": "node api/server.js",
+    "start": "node api/server.js"
   },
-  "devDependencies": {
-    "eslint": "^8.57.0",
-    "jest": "^29.7.0"
+  "dependencies": {
+    "@turf/turf": "^7.2.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "uuid": "^9.0.1",
+    "ws": "^8.18.0",
+    "xmldom": "^0.8.10"
   }
 }
+
