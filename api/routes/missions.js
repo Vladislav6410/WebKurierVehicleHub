@@ -1,6 +1,6 @@
 import express from "express";
 import multer from "multer";
-import path from "path";
+import path from "node:path";
 import fs from "fs";
 
 import { v4 as uuidv4 } from "uuid";
@@ -8,6 +8,7 @@ import { store } from "../../data/store.js";
 import { parseAoiFileToFeatureCollection, computeAreaKm2 } from "../../services/aoi/aoi.js";
 import { planMissionFromAoi } from "../../services/planner/planner.js";
 import { startProcessingJob } from "../../services/processing/webodm.js";
+import { chainAppend, hashFileSha256 } from "../../services/chain/chain-client.js";
 
 const router = express.Router();
 
@@ -78,6 +79,34 @@ router.post("/", upload.single("aoi"), async (req, res) => {
       plan,
       processing: { state: "idle", outputs: {} },
     });
+
+    // --- Chain audit: MISSION_CREATED ---
+    try {
+      const aoiStoredPath = req.file.path;
+      const aoiHash = await hashFileSha256(aoiStoredPath);
+
+      await chainAppend({
+        event: "MISSION_CREATED",
+        at: new Date().toISOString(),
+        mission: {
+          id: mission.id,
+          name: mission.name,
+          areaKm2: mission.areaKm2,
+          camera: mission.camera,
+          gsdCmPerPx: mission.gsdCmPerPx,
+          overlapPct: mission.overlapPct,
+          speedMps: mission.speedMps,
+        },
+        aoi: {
+          originalName: req.file.originalname,
+          storedName: path.basename(aoiStoredPath),
+          sha256: aoiHash,
+        },
+        plan: mission.plan?.derived || null,
+      });
+    } catch (e) {
+      console.warn("[Chain] MISSION_CREATED append failed:", e?.message || e);
+    }
 
     res.status(201).json(mission);
   } catch (e) {
