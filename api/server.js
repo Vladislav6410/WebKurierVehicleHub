@@ -7,6 +7,7 @@ import { fileURLToPath } from "url";
 import missionsRouter from "./routes/missions.js";
 import telemetryRouter from "./routes/telemetry.js";
 import flightRouter from "./routes/flight.js";
+import telemetryControlRouter from "./routes/telemetry-control.js";
 import { attachTelemetryWs } from "./ws/telemetry-ws.js";
 
 const app = express();
@@ -33,6 +34,7 @@ app.get("/health", (_, res) =>
 );
 
 app.use("/api/missions", missionsRouter);
+app.use("/api/missions", telemetryControlRouter);
 app.use("/api/telemetry", telemetryRouter);
 app.use("/api/flight", flightRouter);
 
@@ -47,3 +49,4 @@ process.on("SIGINT", () => {
   console.log("\n[DroneHybrid] shutting down...");
   server.close(() => process.exit(0));
 });
+
