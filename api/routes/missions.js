@@ -1,11 +1,15 @@
 import express from "express";
 import multer from "multer";
 import path from "node:path";
-import fs from "fs";
+import fs from "node:fs";
 
 import { v4 as uuidv4 } from "uuid";
+
 import { store } from "../../data/store.js";
-import { parseAoiFileToFeatureCollection, computeAreaKm2 } from "../../services/aoi/aoi.js";
+import {
+  parseAoiFileToFeatureCollection,
+  computeAreaKm2,
+} from "../../services/aoi/aoi.js";
 import { planMissionFromAoi } from "../../services/planner/planner.js";
 import { startProcessingJob } from "../../services/processing/webodm.js";
 import { chainAppend, hashFileSha256 } from "../../services/chain/chain-client.js";
@@ -51,30 +55,38 @@ router.post("/", upload.single("aoi"), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "AOI_FILE_REQUIRED" });
 
     const aoiPath = req.file.path;
+
     const aoiFc = await parseAoiFileToFeatureCollection(aoiPath, req.file.originalname);
     const areaKm2 = computeAreaKm2(aoiFc);
 
+    const gsdCmPerPx = Number(gsd || 3.0);
+    const overlapPct = Number(overlap || 80);
+    const speedMps = Number(speed || 10);
+    const cameraId = camera || "sony_a6000_16mm";
+
     const plan = planMissionFromAoi({
       aoiFeatureCollection: aoiFc,
-      cameraId: camera || "sony_a6000_16mm",
-      gsdCmPerPx: Number(gsd || 3.0),
-      overlapPct: Number(overlap || 80),
-      speedMps: Number(speed || 10),
+      cameraId,
+      gsdCmPerPx,
+      overlapPct,
+      speedMps,
     });
+
+    const storedName = path.basename(aoiPath);
 
     const mission = store.createMission({
       name,
       status: "planned",
       createdAt: new Date().toISOString(),
       areaKm2,
-      gsdCmPerPx: Number(gsd || 3.0),
-      overlapPct: Number(overlap || 80),
-      speedMps: Number(speed || 10),
-      camera: camera || "sony_a6000_16mm",
+      gsdCmPerPx,
+      overlapPct,
+      speedMps,
+      camera: cameraId,
       aoiFile: {
         originalName: req.file.originalname,
-        storedName: path.basename(aoiPath),
-        url: `/files/uploads/${path.basename(aoiPath)}`,
+        storedName,
+        url: `/files/uploads/${storedName}`,
       },
       plan,
       processing: { state: "idle", outputs: {} },
@@ -82,8 +94,7 @@ router.post("/", upload.single("aoi"), async (req, res) => {
 
     // --- Chain audit: MISSION_CREATED ---
     try {
-      const aoiStoredPath = req.file.path;
-      const aoiHash = await hashFileSha256(aoiStoredPath);
+      const aoiHash = await hashFileSha256(aoiPath);
 
       await chainAppend({
         event: "MISSION_CREATED",
@@ -99,10 +110,11 @@ router.post("/", upload.single("aoi"), async (req, res) => {
         },
         aoi: {
           originalName: req.file.originalname,
-          storedName: path.basename(aoiStoredPath),
+          storedName,
           sha256: aoiHash,
         },
-        plan: mission.plan?.derived || null,
+        // safer: if derived doesn't exist, store whole plan
+        plan: mission.plan?.derived ?? mission.plan ?? null,
       });
     } catch (e) {
       console.warn("[Chain] MISSION_CREATED append failed:", e?.message || e);
@@ -111,27 +123,35 @@ router.post("/", upload.single("aoi"), async (req, res) => {
     res.status(201).json(mission);
   } catch (e) {
     console.error("[missions.create] error:", e);
-    res.status(500).json({ error: "MISSION_CREATE_FAILED", details: String(e?.message || e) });
+    res.status(500).json({
+      error: "MISSION_CREATE_FAILED",
+      details: String(e?.message || e),
+    });
   }
 });
 
 // POST /api/missions/:id/process (body: {type:'ortho'|'dsm'|'model'})
 router.post("/:id/process", async (req, res) => {
   const missionId = req.params.id;
-  const { type } = req.body;
+  const type = req.body?.type;
 
   const mission = store.getMission(missionId);
   if (!mission) return res.status(404).json({ error: "MISSION_NOT_FOUND" });
 
   const allowed = new Set(["ortho", "dsm", "model"]);
-  if (!allowed.has(type)) return res.status(400).json({ error: "INVALID_PROCESSING_TYPE" });
+  if (typeof type !== "string" || !allowed.has(type)) {
+    return res.status(400).json({ error: "INVALID_PROCESSING_TYPE" });
+  }
 
   try {
     const job = await startProcessingJob({ missionId, type });
     res.json({ ok: true, job });
   } catch (e) {
     console.error("[missions.process] error:", e);
-    res.status(500).json({ error: "PROCESSING_START_FAILED", details: String(e?.message || e) });
+    res.status(500).json({
+      error: "PROCESSING_START_FAILED",
+      details: String(e?.message || e),
+    });
   }
 });
 
