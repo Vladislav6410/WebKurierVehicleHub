@@ -2,7 +2,6 @@ import express from "express";
 import cors from "cors";
 import path from "path";
 import fs from "fs";
-import { fileURLToPath } from "url";
 
 import missionsRouter from "./routes/missions.js";
 import telemetryRouter from "./routes/telemetry.js";
@@ -10,14 +9,14 @@ import flightRouter from "./routes/flight.js";
 import telemetryControlRouter from "./routes/telemetry-control.js";
 import { attachTelemetryWs } from "./ws/telemetry-ws.js";
 
+// (optional) if you also added WebODM routes:
+// import webodmRouter from "./routes/webodm.js";
+
 const app = express();
 
 const PORT = Number(process.env.PORT || 3000);
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
 const DATA_DIR = process.env.DATA_DIR || "./data";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // базовая папка данных + telemetry под неё
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -35,8 +34,12 @@ app.get("/health", (_, res) =>
 
 app.use("/api/missions", missionsRouter);
 app.use("/api/missions", telemetryControlRouter);
+app.use("/api/missions", flightRouter);
+
+// (optional) WebODM routes mounted under /api/missions/... (if you added them)
+// app.use("/api/missions", webodmRouter);
+
 app.use("/api/telemetry", telemetryRouter);
-app.use("/api/flight", flightRouter);
 
 // HTTP server + WebSocket
 const server = app.listen(PORT, () => {
